@@ -68,15 +68,15 @@ def load_and_validate_config():
             config = yaml.safe_load(f)
         
         # Check cameras
-        cameras = config.get('cameras', [])
-        if not cameras:
+
+        if not config.cameras:
             print('✗ No cameras defined in config')
             return False
         
-        print(f'✓ Found {len(cameras)} camera(s) in config')
+        print(f'✓ Found {len(config.cameras)} camera(s) in config')
         
         # Check each camera
-        for cam in cameras:
+        for cam in config.cameras:
             name = cam.get('name', 'unnamed')
             rtsp_url = cam.get('rtsp_url', '')
             output_dir = cam.get('output_dir', '')

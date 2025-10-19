@@ -28,9 +28,9 @@ class CamsManager:
         """Initialize recorders for all cameras"""
         for camera in self.config.cameras:
             recorder = CameraRecorder(
-                name=camera["name"],
-                rtsp_url=camera["rtsp_url"],
-                output_dir=camera["output_dir"],
+                name=camera.name,
+                rtsp_url=camera.rtsp_url,
+                output_dir=camera.output_dir,
                 segment_duration=self.config.recording.segment_duration,
                 reconnect_delay=self.config.recording.reconnect_delay,
                 ffmpeg_options=self.config.ffmpeg.model_dump(),
@@ -41,7 +41,7 @@ class CamsManager:
 
     def setup_cleaner(self) -> None:
         """Initialize cleaner for old recordings"""
-        recording_dirs = [Path(cam["output_dir"]) for cam in self.config.cameras]
+        recording_dirs = [Path(cam.output_dir) for cam in self.config.cameras]
         self.cleaner = RecordingCleaner(
             recording_dirs=recording_dirs,
             retention_days=self.config.recording.retention_days,
