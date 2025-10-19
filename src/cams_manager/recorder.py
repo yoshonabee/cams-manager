@@ -40,13 +40,12 @@ class CameraRecorder:
     def _build_ffmpeg_command(self) -> list[str]:
         '''Build FFmpeg command with all required parameters'''
 
-        output_pattern = str(self.output_dir / "%Y/%m/%d/%H%M%S.mp4")
+        output_pattern = str(self.output_dir / "%Y%m%d_%H%M%S.mp4")
         return [
             'ffmpeg',
             '-rtsp_transport', 'tcp',
             '-rtbufsize', self.ffmpeg_options.get('rtbufsize', '100M'),
             '-timeout', str(self.ffmpeg_options.get('timeout', 5000000)),
-            '-rw_timeout', str(self.ffmpeg_options.get('rw_timeout', 5000000)),
             '-use_wallclock_as_timestamps', '1',
             '-i', self.rtsp_url,
             '-reset_timestamps', '1',
