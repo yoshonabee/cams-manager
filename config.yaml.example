@@ -1,0 +1,21 @@
+cameras:
+  - name: cam1
+    rtsp_url: rtsp://user:pass@192.168.1.101:554/stream
+    output_dir: /home/pi/data/recordings/cam1
+  - name: cam2
+    rtsp_url: rtsp://user:pass@192.168.1.102:554/stream
+    output_dir: /data/recordings/cam2
+  - name: cam3
+    rtsp_url: rtsp://user:pass@192.168.1.103:554/stream
+    output_dir: /data/recordings/cam3
+
+recording:
+  segment_duration: 60
+  retention_days: 7
+  reconnect_delay: 5
+  
+ffmpeg:
+  rtbufsize: 100M
+  stimeout: 5000000
+  rw_timeout: 5000000
+

@@ -1,0 +1,19 @@
+[project]
+name = 'cams-manager'
+version = '0.1.0'
+description = 'IP cameras RTSP stream recorder with auto-reconnect and retention management'
+readme = 'README.md'
+requires-python = '>=3.13'
+dependencies = [
+    'pyyaml>=6.0.1',
+    'pydantic>=2.0.0',
+    'pydantic-settings>=2.0.0',
+]
+
+[project.scripts]
+cams-manager = 'cams_manager.main:main'
+
+[build-system]
+requires = ['hatchling']
+build-backend = 'hatchling.build'
+
