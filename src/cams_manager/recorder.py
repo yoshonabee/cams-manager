@@ -45,7 +45,7 @@ class CameraRecorder:
             'ffmpeg',
             '-rtsp_transport', 'tcp',
             '-rtbufsize', self.ffmpeg_options.get('rtbufsize', '100M'),
-            '-stimeout', str(self.ffmpeg_options.get('stimeout', 5000000)),
+            '-timeout', str(self.ffmpeg_options.get('timeout', 5000000)),
             '-rw_timeout', str(self.ffmpeg_options.get('rw_timeout', 5000000)),
             '-use_wallclock_as_timestamps', '1',
             '-i', self.rtsp_url,

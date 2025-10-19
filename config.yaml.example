@@ -16,6 +16,6 @@ recording:
   
 ffmpeg:
   rtbufsize: 100M
-  stimeout: 5000000
+  timeout: 5000000
   rw_timeout: 5000000
 

@@ -96,7 +96,7 @@ recording:
   
 ffmpeg:
   rtbufsize: 100M
-  stimeout: 5000000  # 5 秒（微秒）
+  timeout: 5000000  # 5 秒（微秒）
   rw_timeout: 5000000  # 5 秒（微秒）
 ```
 
@@ -197,7 +197,7 @@ output_dir/YYYY/mm/dd/HHMMSS.mp4
 
 - `rtsp_transport tcp`：使用 TCP 傳輸（較穩定）
 - `rtbufsize`：RTSP buffer 大小
-- `stimeout`：Socket timeout
+- `timeout`：Socket timeout
 - `rw_timeout`：讀寫 timeout
 - `use_wallclock_as_timestamps`：使用系統時間作為時間戳
 - `reset_timestamps`：重置時間戳
