@@ -13,6 +13,11 @@ IP Camera RTSP Stream Recorder with auto-reconnect and retention management.
 - 🚀 使用 Python 3.13 和 uv 套件管理
 - 🔧 優化的 FFmpeg 參數，適合長時間錄影
 
+## TODO
+
+- [ ] 解決 FFmpeg 重連問題：當網路中斷或 camera 重啟時，需改善重連邏輯確保錄影不中斷
+  - 目前 ffmpeg 會 hang 住，不會自動重連，且 python 無法得知 ffmpeg 有問題。
+
 ## 系統需求
 
 - Python 3.13+
