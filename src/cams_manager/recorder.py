@@ -139,7 +139,7 @@ class CameraRecorder:
 
                 # Track last health check time
                 last_health_check = time.time()
-                health_check_interval = 10  # Check health every 10 seconds
+                health_check_interval = 5  # Check health every 10 seconds
 
                 # Monitor the process
                 while not self._stop_event.is_set():
