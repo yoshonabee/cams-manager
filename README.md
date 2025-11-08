@@ -8,15 +8,17 @@ IP Camera RTSP Stream Recorder with auto-reconnect and retention management.
 
 - 🎥 同時錄製多個 IP camera 的 RTSP stream
 - 🔄 自動重連機制，當 stream 中斷時自動恢復
-- ⏱️ 可設定的分段錄影時間（預設 1 分鐘）
+- ⏱️ 可設定的分段錄影時間（預設 2 秒）
+- 🔗 自動合併短片段為分鐘級檔案，減少檔案數量
 - 🗑️ 自動清理舊檔案（預設保留 7 天）
 - 🚀 使用 Python 3.13 和 uv 套件管理
 - 🔧 優化的 FFmpeg 參數，適合長時間錄影
 
 ## TODO
 
-- [ ] 解決 FFmpeg 重連問題：當網路中斷或 camera 重啟時，需改善重連邏輯確保錄影不中斷
+- [x] 解決 FFmpeg 重連問題：當網路中斷或 camera 重啟時，需改善重連邏輯確保錄影不中斷。
   - 目前 ffmpeg 會 hang 住，不會自動重連，且 python 無法得知 ffmpeg 有問題。
+- [ ] 支援 error 發生或斷線重新連接時，使用 telegram 通知使用者。
 
 ## 系統需求
 
@@ -95,14 +97,15 @@ cameras:
     output_dir: /data/recordings/cam3
 
 recording:
-  segment_duration: 60  # 1 分鐘
-  retention_days: 7
-  reconnect_delay: 5  # 重連等待時間（秒）
+  segment_duration: 2          # 短 segment 長度（秒）
+  retention_days: 7            # 保留天數
+  reconnect_delay: 5           # 重連延遲（秒）
+  merge_interval: 30           # 合併檢查間隔（秒）
+  merge_delay: 120             # 檔案至少要等多久才會被合併（秒）
   
 ffmpeg:
   rtbufsize: 100M
   timeout: 5000000  # 5 秒（微秒）
-  rw_timeout: 5000000  # 5 秒（微秒）
 ```
 
 #### 6. 建立錄影目錄
@@ -152,13 +155,13 @@ sudo systemctl enable cams-manager.service
 sudo systemctl start cams-manager.service
 ```
 
-### 查看服務狀態：
+#### 查看服務狀態
 
 ```bash
 sudo systemctl status cams-manager.service
 ```
 
-4. 查看日誌：
+#### 查看日誌
 
 ```bash
 # 即時查看日誌
@@ -168,7 +171,7 @@ sudo journalctl -u cams-manager.service -f
 sudo journalctl -u cams-manager.service -n 100
 ```
 
-5. 控制服務：
+#### 控制服務
 
 ```bash
 # 停止服務
@@ -185,31 +188,57 @@ sudo systemctl disable cams-manager.service
 
 錄影檔案會以以下目錄結構和檔案名稱儲存：
 
+### 短片段（segments）
+錄影時會先產生短片段，儲存在 `segments` 子目錄：
 ```
-output_dir/YYYY/mm/dd/HHMMSS.mp4
+output_dir/segments/YYYYMMDD_HHMMSS.mp4
 ```
 
 例如：
 ```
-/data/recordings/cam1/2024/10/18/143025.mp4
+/data/recordings/cam1/segments/20241018_143025.mp4
 ```
 
-檔案會自動按年/月/日組織在子目錄中。
+### 合併後檔案（merged）
+系統會自動將短片段合併為分鐘級檔案，儲存在 `merged` 子目錄：
+```
+output_dir/merged/YYYYMMDD_HHMM.mp4
+```
 
-## FFmpeg 參數說明
+例如：
+```
+/data/recordings/cam1/merged/20241018_1430.mp4
+```
 
-本專案使用的 FFmpeg 參數：
+合併後的檔案會自動刪除對應的短片段，以節省儲存空間。
+
+## 工作原理
+
+### 錄影流程
+
+1. **錄製短片段**：FFmpeg 會持續錄製 RTSP stream，並根據 `segment_duration` 設定產生短片段（預設 2 秒）
+2. **自動合併**：`SegmentAggregator` 會定期檢查 `segments` 目錄，將超過 `merge_delay` 時間的短片段合併為分鐘級檔案
+3. **清理舊檔**：`RecordingCleaner` 會定期清理超過 `retention_days` 的舊檔案
+
+### FFmpeg 參數說明
+
+錄影時使用的 FFmpeg 參數：
 
 - `rtsp_transport tcp`：使用 TCP 傳輸（較穩定）
 - `rtbufsize`：RTSP buffer 大小
-- `timeout`：Socket timeout
-- `rw_timeout`：讀寫 timeout
+- `timeout`：Socket timeout（微秒）
 - `use_wallclock_as_timestamps`：使用系統時間作為時間戳
 - `reset_timestamps`：重置時間戳
 - `c:v copy`：視訊直接複製（不重新編碼）
 - `c:a aac`：音訊轉為 AAC 編碼
 - `segment`：分段錄影模式
 - `segment_time`：每個分段的長度（秒）
+- `segment_atclocktime`：在整點時間切換 segment
+
+合併時使用的 FFmpeg 參數：
+
+- `concat demuxer`：使用 FFmpeg concat demuxer 合併多個檔案
+- `c copy`：直接複製，不重新編碼，保持原始品質
 
 ## 疑難排解
 
@@ -242,7 +271,7 @@ df -h /data/recordings
 ```
 
 2. 調整 `retention_days` 設定以保留更少天數
-3. 考慮使用較低的視訊品質或降低 segment_duration
+3. 考慮使用較低的視訊品質或增加 `segment_duration`（較長的片段會產生較少的檔案）
 
 ### 查看詳細日誌
 
