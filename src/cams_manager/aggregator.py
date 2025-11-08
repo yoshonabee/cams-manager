@@ -1,9 +1,11 @@
 """Segment aggregator for merging short segments into longer files"""
 
 import logging
+import os
 import subprocess
 import tempfile
 import threading
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -78,21 +80,111 @@ class SegmentAggregator:
         if not segments:
             return False
 
-        # Create temporary file list
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        # Filter out incomplete/corrupted segments
+        valid_segments = []
+        for segment in segments:
+            if not segment.exists():
+                logger.warning(f"[{self.name}] Segment file does not exist: {segment}")
+                continue
+
+            try:
+                file_size = segment.stat().st_size
+                # Check if file is too small (likely incomplete)
+                if file_size < 1024:  # Less than 1KB is likely incomplete
+                    logger.warning(
+                        f"[{self.name}] Skipping small/incomplete segment: {segment.name} "
+                        f"(size: {file_size} bytes)"
+                    )
+                    continue
+
+                # Quick check if file is readable by FFmpeg
+                probe_cmd = [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-count_packets",
+                    "-show_entries",
+                    "stream=nb_read_packets",
+                    "-of",
+                    "csv=p=0",
+                    str(segment),
+                ]
+                probe_result = subprocess.run(
+                    probe_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=5,
+                )
+
+                if probe_result.returncode != 0:
+                    logger.warning(
+                        f"[{self.name}] Skipping corrupted/incomplete segment: {segment.name} "
+                        f"(ffprobe failed: {probe_result.stderr.decode('utf-8', errors='ignore')[:100]})"
+                    )
+                    continue
+
+                valid_segments.append(segment)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    f"[{self.name}] Timeout checking segment: {segment.name}, skipping"
+                )
+                continue
+            except Exception as e:
+                logger.warning(
+                    f"[{self.name}] Error checking segment {segment.name}: {e}, skipping"
+                )
+                continue
+
+        if not valid_segments:
+            logger.warning(
+                f"[{self.name}] No valid segments to merge (all {len(segments)} segments "
+                f"were incomplete or corrupted)"
+            )
+            return False
+
+        if len(valid_segments) < len(segments):
+            logger.warning(
+                f"[{self.name}] Filtered out {len(segments) - len(valid_segments)} "
+                f"incomplete/corrupted segments, merging {len(valid_segments)} valid ones"
+            )
+
+        # Create temporary file list with only valid segments
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             filelist_path = Path(f.name)
-            for segment in segments:
+            for segment in valid_segments:
                 # Use absolute path and escape single quotes
                 abs_path = segment.resolve()
                 f.write(f"file '{abs_path}'\n")
+            f.flush()  # Ensure data is written to buffer
+            os.fsync(f.fileno())  # Force write to disk
+
+        if logger.level == logging.DEBUG:
+            try:
+                with open(filelist_path, "r", encoding="utf-8") as check_f:
+                    filelist_content = check_f.read()
+                    logger.debug(
+                        f"[{self.name}] File list content ({len(filelist_content)} bytes):\n{filelist_content[:200]}"
+                    )
+            except Exception as e:
+                logger.warning(f"[{self.name}] Could not verify file list: {e}")
+
+        # Small delay to ensure file system sync
+        time.sleep(0.2)
 
         try:
             # Use temporary output file first (atomic write)
-            temp_output = output_path.with_suffix(".tmp")
+            # Use .mp4.tmp instead of .tmp so FFmpeg can infer the format
+            temp_output = output_path.with_suffix(".mp4.tmp")
 
-            # Build FFmpeg command
+            # Build FFmpeg command with protocol whitelist
             cmd = [
                 "ffmpeg",
+                "-protocol_whitelist",
+                "file,concat",
                 "-f",
                 "concat",
                 "-safe",
@@ -101,13 +193,16 @@ class SegmentAggregator:
                 str(filelist_path),
                 "-c",
                 "copy",  # Copy codec, no re-encoding
+                "-f",
+                "mp4",  # Explicitly specify output format
                 "-y",  # Overwrite output file
                 str(temp_output),
             ]
 
             logger.debug(
-                f"[{self.name}] Merging {len(segments)} segments into {output_path.name}"
+                f"[{self.name}] Merging {len(valid_segments)} segments into {output_path.name}"
             )
+            logger.debug(f"[{self.name}] FFmpeg command: {' '.join(cmd)}")
 
             # Run FFmpeg
             result = subprocess.run(
@@ -120,8 +215,17 @@ class SegmentAggregator:
 
             if result.returncode != 0:
                 logger.error(
-                    f"[{self.name}] FFmpeg merge failed: {result.stderr[-500:]}"
+                    f"[{self.name}] FFmpeg merge failed (return code: {result.returncode})"
                 )
+                logger.error(f"[{self.name}] FFmpeg stderr: {result.stderr}")
+                # Log file list content for debugging
+                try:
+                    with open(filelist_path, "r", encoding="utf-8") as debug_f:
+                        logger.error(
+                            f"[{self.name}] File list content:\n{debug_f.read()}"
+                        )
+                except Exception:
+                    pass
                 # Clean up temp file
                 if temp_output.exists():
                     temp_output.unlink()
@@ -130,13 +234,13 @@ class SegmentAggregator:
             # Atomic rename
             temp_output.rename(output_path)
             logger.info(
-                f"[{self.name}] Successfully merged {len(segments)} segments "
+                f"[{self.name}] Successfully merged {len(valid_segments)} segments "
                 f"into {output_path.name}"
             )
 
-            # Delete merged segments
+            # Delete merged segments (only valid ones that were successfully merged)
             deleted_count = 0
-            for segment in segments:
+            for segment in valid_segments:
                 try:
                     segment.unlink()
                     deleted_count += 1
@@ -146,7 +250,7 @@ class SegmentAggregator:
                     )
 
             logger.debug(
-                f"[{self.name}] Deleted {deleted_count}/{len(segments)} segments"
+                f"[{self.name}] Deleted {deleted_count}/{len(valid_segments)} merged segments"
             )
 
             return True
@@ -204,7 +308,7 @@ class SegmentAggregator:
             if minute_end.timestamp() >= cutoff_timestamp:
                 logger.debug(
                     f"[{self.name}] Skipping incomplete minute: {time_key} "
-                    f"(end time {minute_end.strftime('%H:%M:%S')} >= cutoff)"
+                    f"(end time {minute_end.strftime('%H:%M:%S')} >= {datetime.fromtimestamp(cutoff_timestamp).strftime('%H:%M:%S')})"
                 )
                 continue
 
