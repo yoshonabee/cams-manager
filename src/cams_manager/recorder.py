@@ -85,8 +85,45 @@ class CameraRecorder:
             output_pattern,
         ]
 
+    def _get_latest_segment_mtime(self) -> float | None:
+        """Get modification time of the latest segment file"""
+        if not self.output_dir.exists():
+            return None
+        
+        segments = list(self.output_dir.glob('*.mp4'))
+        if not segments:
+            return None
+        
+        # Get the most recently modified file
+        latest = max(segments, key=lambda p: p.stat().st_mtime)
+        return latest.stat().st_mtime
+
+    def _check_ffmpeg_health(self, timeout: int) -> bool:
+        """Check if FFmpeg is producing new files (health check)"""
+        if self._process is None or self._process.poll() is not None:
+            return False
+        
+        # Check if new files are being created
+        # Allow up to segment_duration * 3 seconds without new files before considering it hung
+        latest_mtime = self._get_latest_segment_mtime()
+        
+        if latest_mtime is None:
+            # No files yet, give it some time
+            return True
+        
+        time_since_last_file = time.time() - latest_mtime
+        if time_since_last_file > timeout:
+            logger.warning(
+                f"[{self.name}] FFmpeg appears to be hung: "
+                f"no new files for {time_since_last_file:.1f} seconds "
+                f"(threshold: {timeout}s)"
+            )
+            return False
+        
+        return True
+
     def _run_ffmpeg(self) -> None:
-        """Run FFmpeg process with auto-reconnect"""
+        """Run FFmpeg process with auto-reconnect and health monitoring"""
         while not self._stop_event.is_set():
             try:
                 cmd = self._build_ffmpeg_command()
@@ -99,6 +136,10 @@ class CameraRecorder:
                     stderr=subprocess.PIPE,
                     text=True,
                 )
+
+                # Track last health check time
+                last_health_check = time.time()
+                health_check_interval = 10  # Check health every 10 seconds
 
                 # Monitor the process
                 while not self._stop_event.is_set():
@@ -114,6 +155,33 @@ class CameraRecorder:
                                 f"[{self.name}] FFmpeg stderr: {stderr[-500:]}"
                             )
                         break
+                    
+                    # Periodic health check
+                    current_time = time.time()
+                    if current_time - last_health_check >= health_check_interval:
+                        if not self._check_ffmpeg_health(health_check_interval * 2):
+                            # FFmpeg appears to be hung, force restart
+                            logger.warning(
+                                f"[{self.name}] FFmpeg health check failed, "
+                                f"forcing restart..."
+                            )
+                            try:
+                                self._process.terminate()
+                                try:
+                                    self._process.wait(timeout=5)
+                                except subprocess.TimeoutExpired:
+                                    logger.warning(
+                                        f"[{self.name}] FFmpeg did not terminate, killing..."
+                                    )
+                                    self._process.kill()
+                                    self._process.wait()
+                            except Exception as e:
+                                logger.error(
+                                    f"[{self.name}] Error terminating hung process: {e}"
+                                )
+                            break
+                        last_health_check = current_time
+                    
                     time.sleep(1)
 
                 # If we're not stopping, wait before reconnecting
