@@ -18,9 +18,15 @@ class Camera(BaseModel, extra="forbid"):
 class Recording(BaseModel):
     """Recording configuration model"""
 
-    segment_duration: int = Field(default=60, description="Segment duration in seconds")
+    segment_duration: int = Field(default=2, description="Segment duration in seconds")
     retention_days: int = Field(default=7, description="Retention period in days")
     reconnect_delay: int = Field(default=5, description="Reconnect delay in seconds")
+    merge_interval: int = Field(
+        default=30, description="Merge check interval in seconds"
+    )
+    merge_delay: int = Field(
+        default=120, description="Minimum delay before merging segments in seconds"
+    )
 
 
 class FFmpeg(BaseModel):

@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+from .aggregator import SegmentAggregator
 from .cleaner import RecordingCleaner
 from .config import Config
 from .recorder import CameraRecorder
@@ -21,6 +22,7 @@ class CamsManager:
     def __init__(self, config_path: str | Path):
         self.config = Config.from_yaml(config_path)
         self.recorders: list[CameraRecorder] = []
+        self.aggregators: list[SegmentAggregator] = []
         self.cleaner: RecordingCleaner | None = None
         self._shutdown = False
 
@@ -39,12 +41,31 @@ class CamsManager:
 
         logger.info(f"Initialized {len(self.recorders)} camera recorders")
 
+    def setup_aggregators(self) -> None:
+        """Initialize aggregators for all cameras"""
+        for camera in self.config.cameras:
+            base_dir = Path(camera.output_dir)
+            segments_dir = base_dir / "segments"
+            merged_dir = base_dir / "merged"
+
+            aggregator = SegmentAggregator(
+                name=camera.name,
+                segments_dir=segments_dir,
+                merged_dir=merged_dir,
+                merge_interval=self.config.recording.merge_interval,
+                merge_delay=self.config.recording.merge_delay,
+            )
+            self.aggregators.append(aggregator)
+
+        logger.info(f"Initialized {len(self.aggregators)} segment aggregators")
+
     def setup_cleaner(self) -> None:
         """Initialize cleaner for old recordings"""
         recording_dirs = [Path(cam.output_dir) for cam in self.config.cameras]
         self.cleaner = RecordingCleaner(
             recording_dirs=recording_dirs,
             retention_days=self.config.recording.retention_days,
+            merge_delay=self.config.recording.merge_delay,
         )
         logger.info("Initialized recording cleaner")
 
@@ -55,6 +76,10 @@ class CamsManager:
         # Start all recorders
         for recorder in self.recorders:
             recorder.start()
+
+        # Start all aggregators
+        for aggregator in self.aggregators:
+            aggregator.start()
 
         # Start cleaner
         if self.cleaner:
@@ -74,6 +99,10 @@ class CamsManager:
         for recorder in self.recorders:
             recorder.stop()
 
+        # Stop all aggregators
+        for aggregator in self.aggregators:
+            aggregator.stop()
+
         # Stop cleaner
         if self.cleaner:
             self.cleaner.stop()
@@ -88,6 +117,7 @@ class CamsManager:
 
         # Setup and start services
         self.setup_recorders()
+        self.setup_aggregators()
         self.setup_cleaner()
         self.start()
 

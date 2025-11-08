@@ -17,3 +17,8 @@ cams-manager = 'cams_manager.main:main'
 requires = ['hatchling']
 build-backend = 'hatchling.build'
 
+[dependency-groups]
+dev = [
+    "ruff>=0.14.4",
+]
+

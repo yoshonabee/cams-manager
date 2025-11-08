@@ -10,9 +10,11 @@ cameras:
     output_dir: /data/recordings/cam3
 
 recording:
-  segment_duration: 60
-  retention_days: 7
-  reconnect_delay: 5
+  segment_duration: 2          # 短 segment 長度（秒）
+  retention_days: 7            # 保留天數
+  reconnect_delay: 5           # 重連延遲（秒）
+  merge_interval: 30           # 合併檢查間隔（秒，可以設短一點）
+  merge_delay: 120             # 檔案至少要等多久才會被合併（秒）
   
 ffmpeg:
   rtbufsize: 100M

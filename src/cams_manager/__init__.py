@@ -1,4 +1,3 @@
-'''IP Camera RTSP Stream Recorder'''
+"""IP Camera RTSP Stream Recorder"""
 
-__version__ = '0.1.0'
-
+__version__ = "0.1.0"
