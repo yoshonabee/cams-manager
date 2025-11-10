@@ -34,9 +34,6 @@ class FFmpeg(BaseModel):
 
     rtbufsize: str = Field(default="100M", description="RT buffer size")
     timeout: int = Field(default=5000000, description="Stream timeout in microseconds")
-    rw_timeout: int = Field(
-        default=5000000, description="Read/write timeout in microseconds"
-    )
 
 
 class Config(BaseSettings):
