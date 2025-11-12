@@ -1,5 +1,6 @@
 """Segment aggregator for merging short segments into longer files"""
 
+import json
 import logging
 import os
 import subprocess
@@ -97,18 +98,15 @@ class SegmentAggregator:
                     )
                     continue
 
-                # Quick check if file is readable by FFmpeg
+                # Check if file has valid video stream and duration using ffprobe
                 probe_cmd = [
                     "ffprobe",
                     "-v",
                     "error",
-                    "-select_streams",
-                    "v:0",
-                    "-count_packets",
                     "-show_entries",
-                    "stream=nb_read_packets",
+                    "format=duration:stream=codec_type,nb_read_packets",
                     "-of",
-                    "csv=p=0",
+                    "json",
                     str(segment),
                 ]
                 probe_result = subprocess.run(
@@ -122,6 +120,59 @@ class SegmentAggregator:
                     logger.warning(
                         f"[{self.name}] Skipping corrupted/incomplete segment: {segment.name} "
                         f"(ffprobe failed: {probe_result.stderr.decode('utf-8', errors='ignore')[:100]})"
+                    )
+                    continue
+
+                # Parse JSON output to validate file integrity
+                try:
+                    probe_data = json.loads(probe_result.stdout.decode("utf-8"))
+
+                    # Check if there are any streams
+                    streams = probe_data.get("streams", [])
+                    if not streams:
+                        logger.warning(
+                            f"[{self.name}] Skipping segment without streams: {segment.name}"
+                        )
+                        continue
+
+                    # Check if there's at least one video stream
+                    has_video = any(s.get("codec_type") == "video" for s in streams)
+                    if not has_video:
+                        logger.warning(
+                            f"[{self.name}] Skipping segment without video stream: {segment.name}"
+                        )
+                        continue
+
+                    # Check if format has valid duration
+                    format_info = probe_data.get("format", {})
+                    duration = format_info.get("duration")
+                    if duration is None or duration == "N/A":
+                        logger.warning(
+                            f"[{self.name}] Skipping segment with invalid duration: {segment.name} "
+                            f"(duration: {duration})"
+                        )
+                        continue
+
+                    # Check if duration is a valid number and not zero
+                    try:
+                        duration_float = float(duration)
+                        if duration_float <= 0:
+                            logger.warning(
+                                f"[{self.name}] Skipping segment with zero/negative duration: {segment.name} "
+                                f"(duration: {duration_float}s)"
+                            )
+                            continue
+                    except (ValueError, TypeError):
+                        logger.warning(
+                            f"[{self.name}] Skipping segment with unparseable duration: {segment.name} "
+                            f"(duration: {duration})"
+                        )
+                        continue
+
+                except json.JSONDecodeError as e:
+                    logger.warning(
+                        f"[{self.name}] Skipping segment with invalid ffprobe output: {segment.name} "
+                        f"(JSON error: {e})"
                     )
                     continue
 
